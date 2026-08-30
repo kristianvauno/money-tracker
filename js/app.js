@@ -201,15 +201,30 @@
     }
   }
 
-  async function uploadReceipt(file) {
-    const res = await fetch("/api/upload?name=" + encodeURIComponent(file.name), {
-      method: "POST",
-      headers: { "Content-Type": file.type || "application/octet-stream" },
-      body: file,
+  async function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
-    if (!res.ok) throw new Error("upload failed");
-    const json = await res.json();
-    return json.file;
+  }
+
+  async function uploadReceipt(file) {
+    try {
+      const res = await fetch("/api/upload?name=" + encodeURIComponent(file.name), {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error("upload failed");
+      const json = await res.json();
+      if (json && json.file) return json.file;
+      throw new Error("upload failed");
+    } catch {
+      const url = await fileToDataUrl(file);
+      return { id: uid(), name: file.name, mime: file.type, size: file.size, url };
+    }
   }
 
   function renderChips() {
@@ -377,6 +392,7 @@
     els.formHint.textContent = "Takes about 10 seconds";
     els.saveBtn.textContent = "Save expense";
     els.cancelEdit.classList.add("hidden");
+    els.cancelEdit.hidden = true;
     els.amount.value = "";
     els.payee.value = "";
     els.note.value = "";
@@ -394,6 +410,7 @@
     els.formHint.textContent = "Update and save";
     els.saveBtn.textContent = "Save changes";
     els.cancelEdit.classList.remove("hidden");
+    els.cancelEdit.hidden = false;
     els.amount.value = exp.amount;
     els.payee.value = exp.payee || "";
     els.note.value = exp.note || "";

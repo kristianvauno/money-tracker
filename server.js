@@ -168,6 +168,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log("Weekly expense tracker running at http://127.0.0.1:" + PORT + "/");
-});
+if (require.main === module && process.env.VERCEL !== "1") {
+  server.listen(PORT, "127.0.0.1", () => {
+    console.log("Weekly expense tracker running at http://127.0.0.1:" + PORT + "/");
+  });
+}

@@ -10,6 +10,11 @@
     { id: "other", name: "Other", emoji: "📦" },
   ];
 
+  const PAY_METHODS = [
+    { id: "cash", name: "Cash", emoji: "💵" },
+    { id: "card", name: "Card", emoji: "💳" },
+  ];
+
   const SYMBOL = { PHP: "₱", CAD: "$", USD: "$" };
   const LOCAL_KEY = "weekly-expense-tracker-v1";
 
@@ -23,6 +28,9 @@
     story: document.getElementById("story"),
     days: document.getElementById("days"),
     chips: document.getElementById("category-chips"),
+    payChips: document.getElementById("pay-chips"),
+    payBars: document.getElementById("pay-bars"),
+    payCount: document.getElementById("pay-count"),
     form: document.getElementById("expense-form"),
     formTitle: document.getElementById("form-title"),
     formHint: document.getElementById("form-hint"),
@@ -60,6 +68,7 @@
   let viewMonday = startOfWeek(new Date(), 1);
   let selectedDay = isoDate(new Date());
   let selectedCategory = "food";
+  let selectedPay = "cash";
   let pendingReceipt = null;
   let filterDay = null;
   let query = "";
@@ -139,6 +148,14 @@
 
   function catById(id) {
     return data.categories.find((c) => c.id === id) || { id, name: id, emoji: "•" };
+  }
+
+  function payById(id) {
+    return PAY_METHODS.find((p) => p.id === id) || PAY_METHODS[0];
+  }
+
+  function payMethodOf(exp) {
+    return exp && exp.payMethod === "card" ? "card" : "cash";
   }
 
   function toast(msg) {
@@ -240,6 +257,23 @@
       });
       els.chips.appendChild(btn);
     });
+    renderPayChips();
+  }
+
+  function renderPayChips() {
+    if (!els.payChips) return;
+    els.payChips.innerHTML = "";
+    PAY_METHODS.forEach((pay) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chip" + (selectedPay === pay.id ? " active" : "");
+      btn.textContent = pay.emoji + " " + pay.name;
+      btn.addEventListener("click", () => {
+        selectedPay = pay.id;
+        renderPayChips();
+      });
+      els.payChips.appendChild(btn);
+    });
   }
 
   function render() {
@@ -284,9 +318,16 @@
     let story = items.length
       ? money(spent) + " across " + items.length + " expense" + (items.length === 1 ? "" : "s") + "."
       : "No expenses logged this week yet. Add the first one on the left.";
+    const cashSpent = items.filter((e) => payMethodOf(e) === "cash").reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const cardSpent = items.filter((e) => payMethodOf(e) === "card").reduce((sum, e) => sum + Number(e.amount || 0), 0);
     if (topCat && spent) {
       const cat = catById(topCat[0]);
       story += " " + cat.name + " is " + Math.round((topCat[1] / spent) * 100) + "% of the week.";
+    }
+    if (items.length && spent) {
+      if (cardSpent && cashSpent) story += " " + money(cashSpent) + " cash, " + money(cardSpent) + " card.";
+      else if (cardSpent) story += " All paid by card.";
+      else story += " All paid in cash.";
     }
     if (left != null && items.length) {
       story += left >= 0 ? " " + money(left) + " left of this week’s budget." : " Over budget by " + money(Math.abs(left)) + ".";
@@ -314,7 +355,7 @@
       .filter((e) => !filterDay || e.date === filterDay)
       .filter((e) => {
         if (!query) return true;
-        const hay = (e.payee + " " + e.note + " " + catById(e.category).name).toLowerCase();
+        const hay = (e.payee + " " + e.note + " " + catById(e.category).name + " " + payById(payMethodOf(e)).name).toLowerCase();
         return hay.includes(query);
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.createdAt || "").localeCompare(a.createdAt || "")));
@@ -327,6 +368,7 @@
     } else {
       els.list.innerHTML = visible.map((e) => {
         const cat = catById(e.category);
+        const pay = payById(payMethodOf(e));
         const day = parseISO(e.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
         const receipt = e.receipt && e.receipt.url
           ? `<a class="link-btn" href="${e.receipt.url}" target="_blank" rel="noopener">Receipt</a>`
@@ -334,7 +376,7 @@
         return `<article class="row" data-id="${e.id}">
           <div class="when">${day}</div>
           <div>
-            <div class="who">${escapeHtml(e.payee || cat.name)}</div>
+            <div class="who">${escapeHtml(e.payee || cat.name)} <span class="pay-tag">${pay.emoji} ${escapeHtml(pay.name)}</span></div>
             <div class="meta">${cat.emoji} ${escapeHtml(cat.name)}${e.note ? " · " + escapeHtml(e.note) : ""}</div>
           </div>
           <div>
@@ -361,6 +403,23 @@
           <div class="track"><i style="width:${Math.round((c.total / maxCat) * 100)}%"></i></div>
         </div>`).join("")
       : `<p class="empty">Category bars show up after the first expense.</p>`;
+
+    const payRows = PAY_METHODS.map((p) => ({
+      ...p,
+      total: items.filter((e) => payMethodOf(e) === p.id).reduce((sum, e) => sum + Number(e.amount || 0), 0),
+    })).filter((p) => p.total > 0);
+    const payMax = Math.max(1, ...payRows.map((p) => p.total), 0);
+    if (els.payCount) {
+      els.payCount.textContent = payRows.length ? payRows.map((p) => p.name).join(" · ") : "No spend yet";
+    }
+    if (els.payBars) {
+      els.payBars.innerHTML = payRows.length
+        ? payRows.map((p) => `<div class="bar-row">
+            <div class="bar-top"><strong>${p.emoji} ${escapeHtml(p.name)}</strong><span>${money(p.total)}</span></div>
+            <div class="track"><i style="width:${Math.round((p.total / payMax) * 100)}%"></i></div>
+          </div>`).join("")
+        : `<p class="empty">Cash and card totals show up after you log an expense.</p>`;
+    }
 
     const hist = [];
     for (let i = 0; i < 8; i++) {
@@ -401,6 +460,7 @@
     pendingReceipt = null;
     els.date.value = filterDay || selectedDay || isoDate(new Date());
     selectedCategory = "food";
+    selectedPay = "cash";
     renderChips();
   }
 
@@ -416,6 +476,7 @@
     els.note.value = exp.note || "";
     els.date.value = exp.date;
     selectedCategory = exp.category || "other";
+    selectedPay = payMethodOf(exp);
     pendingReceipt = exp.receipt || null;
     els.receiptName.textContent = pendingReceipt ? pendingReceipt.name : "";
     renderChips();
@@ -497,6 +558,7 @@
       currency: data.settings.currency,
       date,
       category: selectedCategory || "other",
+      payMethod: selectedPay === "card" ? "card" : "cash",
       payee: els.payee.value.trim(),
       note: els.note.value.trim(),
       receipt: receipt || null,
@@ -569,12 +631,12 @@
   });
 
   els.exportBtn.addEventListener("click", () => {
-    const rows = [["Date", "Amount", "Currency", "Category", "Paid to", "Note"]];
+    const rows = [["Date", "Amount", "Currency", "Category", "Paid with", "Paid to", "Note"]];
     data.expenses
       .slice()
       .sort((a, b) => a.date.localeCompare(b.date))
       .forEach((e) => {
-        rows.push([e.date, e.amount, e.currency || data.settings.currency, catById(e.category).name, e.payee || "", e.note || ""]);
+        rows.push([e.date, e.amount, e.currency || data.settings.currency, catById(e.category).name, payById(payMethodOf(e)).name, e.payee || "", e.note || ""]);
       });
     const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });

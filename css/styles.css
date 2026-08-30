@@ -158,6 +158,21 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   font-weight: 600;
 }
 .chip.active { background: var(--gold); color: #1a1204; border-color: var(--gold); }
+.pay-chips { display: grid; grid-template-columns: 1fr 1fr; }
+.pay-chips .chip { display: flex; align-items: center; justify-content: center; text-align: center; }
+.pay-tag {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gold-2);
+  vertical-align: middle;
+}
 .form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .primary-btn, .ghost-btn, .danger-btn, .link-btn {
   border-radius: 999px;

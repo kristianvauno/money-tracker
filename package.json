@@ -1,0 +1,12 @@
+{
+  "name": "money-tracker",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Weekly expense tracker that stays on this computer",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

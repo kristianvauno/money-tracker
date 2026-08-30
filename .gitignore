@@ -1,0 +1,5 @@
+data/ledger.json
+data/ledger.json.tmp
+data/uploads/
+.DS_Store
+Thumbs.db

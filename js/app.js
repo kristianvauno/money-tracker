@@ -54,6 +54,7 @@
     settingsForm: document.getElementById("settings-form"),
     closeSettings: document.getElementById("close-settings"),
     weeklyBudget: document.getElementById("weekly-budget"),
+    cardLimit: document.getElementById("card-limit"),
     currency: document.getElementById("currency"),
     weekStart: document.getElementById("week-start"),
     displayName: document.getElementById("display-name"),
@@ -79,6 +80,7 @@
         currency: "PHP",
         weekStartsOn: 1,
         weeklyBudget: 0,
+        cardLimit: 0,
         displayName: "",
       },
       categories: DEFAULT_CATEGORIES.map((c) => ({ ...c })),
@@ -194,6 +196,7 @@
     const settings = { ...base.settings, ...(raw.settings || {}) };
     settings.weekStartsOn = Number(settings.weekStartsOn) === 0 ? 0 : 1;
     settings.weeklyBudget = Number(settings.weeklyBudget) || 0;
+    settings.cardLimit = Number(settings.cardLimit) || 0;
     const categories = Array.isArray(raw.categories) && raw.categories.length
       ? raw.categories
       : base.categories;
@@ -300,9 +303,15 @@
     els.currencyMark.textContent = SYMBOL[data.settings.currency] || data.settings.currency;
 
     const remainingClass = left == null ? "" : left < 0 ? "danger" : left / budget < 0.2 ? "warn" : "ok";
+    const cardLimit = Number(data.settings.cardLimit) || 0;
+    const cashSpent = items.filter((e) => payMethodOf(e) === "cash").reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const cardSpent = items.filter((e) => payMethodOf(e) === "card").reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const cardLeft = cardLimit ? cardLimit - cardSpent : null;
+    const cardClass = cardLeft == null ? "" : cardLeft < 0 ? "danger" : cardLeft / cardLimit < 0.2 ? "warn" : "ok";
     els.kpis.innerHTML = [
       kpi("Spent this week", money(spent), items.length + " expense" + (items.length === 1 ? "" : "s")),
       kpi("Budget left", left == null ? "Set a budget" : money(left), budget ? "of " + money(budget) : "Open Settings to add one", remainingClass),
+      kpi("Card left", cardLeft == null ? "Set a card limit" : money(cardLeft), cardLimit ? "of " + money(cardLimit) + " credit" : "Open Settings to add one", cardClass),
       kpi("Daily average", money(avg), daysElapsed + " day" + (daysElapsed === 1 ? "" : "s") + " so far"),
       kpi("Days left", String(isThisWeek ? daysLeft : 0), isThisWeek ? "in this week" : "viewing a past week"),
     ].join("");
@@ -318,8 +327,6 @@
     let story = items.length
       ? money(spent) + " across " + items.length + " expense" + (items.length === 1 ? "" : "s") + "."
       : "No expenses logged this week yet. Add the first one on the left.";
-    const cashSpent = items.filter((e) => payMethodOf(e) === "cash").reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    const cardSpent = items.filter((e) => payMethodOf(e) === "card").reduce((sum, e) => sum + Number(e.amount || 0), 0);
     if (topCat && spent) {
       const cat = catById(topCat[0]);
       story += " " + cat.name + " is " + Math.round((topCat[1] / spent) * 100) + "% of the week.";
@@ -331,6 +338,11 @@
     }
     if (left != null && items.length) {
       story += left >= 0 ? " " + money(left) + " left of this week’s budget." : " Over budget by " + money(Math.abs(left)) + ".";
+    }
+    if (cardLimit && (cardSpent || items.length)) {
+      story += cardLeft >= 0
+        ? " " + money(cardLeft) + " left on the card."
+        : " Over the card limit by " + money(Math.abs(cardLeft)) + ".";
     }
     if (vsLast != null && lastSpent) {
       story += vsLast >= 0
@@ -407,17 +419,26 @@
     const payRows = PAY_METHODS.map((p) => ({
       ...p,
       total: items.filter((e) => payMethodOf(e) === p.id).reduce((sum, e) => sum + Number(e.amount || 0), 0),
-    })).filter((p) => p.total > 0);
-    const payMax = Math.max(1, ...payRows.map((p) => p.total), 0);
+    })).filter((p) => p.total > 0 || (p.id === "card" && cardLimit));
+    const payMax = Math.max(1, ...payRows.map((p) => p.total), cardLimit, 0);
     if (els.payCount) {
-      els.payCount.textContent = payRows.length ? payRows.map((p) => p.name).join(" · ") : "No spend yet";
+      els.payCount.textContent = cardLimit
+        ? (cardLeft >= 0 ? money(cardLeft) + " card left" : "Over card limit")
+        : (payRows.some((p) => p.total) ? payRows.filter((p) => p.total).map((p) => p.name).join(" · ") : "No spend yet");
     }
     if (els.payBars) {
       els.payBars.innerHTML = payRows.length
-        ? payRows.map((p) => `<div class="bar-row">
-            <div class="bar-top"><strong>${p.emoji} ${escapeHtml(p.name)}</strong><span>${money(p.total)}</span></div>
-            <div class="track"><i style="width:${Math.round((p.total / payMax) * 100)}%"></i></div>
-          </div>`).join("")
+        ? payRows.map((p) => {
+            const cap = p.id === "card" && cardLimit ? cardLimit : payMax;
+            const pct = Math.min(100, Math.round((p.total / Math.max(1, cap)) * 100));
+            const label = p.id === "card" && cardLimit
+              ? money(p.total) + " / " + money(cardLimit)
+              : money(p.total);
+            return `<div class="bar-row">
+              <div class="bar-top"><strong>${p.emoji} ${escapeHtml(p.name)}</strong><span>${label}</span></div>
+              <div class="track"><i class="${p.id === "card" && cardLimit && p.total > cardLimit ? "over" : ""}" style="width:${pct}%"></i></div>
+            </div>`;
+          }).join("")
         : `<p class="empty">Cash and card totals show up after you log an expense.</p>`;
     }
 
@@ -568,12 +589,21 @@
     if (idx >= 0) {
       payload.createdAt = data.expenses[idx].createdAt || payload.createdAt;
       data.expenses[idx] = payload;
-      toast("Expense updated.");
     } else {
       data.expenses.push(payload);
-      toast("Expense saved to this week.");
     }
     viewMonday = startOfWeek(parseISO(date), Number(data.settings.weekStartsOn) || 0);
+    const cardUsed = weekExpenses(viewMonday)
+      .filter((e) => payMethodOf(e) === "card")
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const limit = Number(data.settings.cardLimit) || 0;
+    if (payload.payMethod === "card" && limit && cardUsed > limit) {
+      toast("Saved. Over the card limit by " + money(cardUsed - limit) + ".");
+    } else if (idx >= 0) {
+      toast("Expense updated.");
+    } else {
+      toast("Expense saved to this week.");
+    }
     await save();
     resetForm();
     els.date.value = date;
@@ -611,6 +641,7 @@
 
   els.settingsBtn.addEventListener("click", () => {
     els.weeklyBudget.value = data.settings.weeklyBudget || "";
+    if (els.cardLimit) els.cardLimit.value = data.settings.cardLimit || "";
     els.currency.value = data.settings.currency || "PHP";
     els.weekStart.value = String(data.settings.weekStartsOn ?? 1);
     els.displayName.value = data.settings.displayName || "";
@@ -620,6 +651,7 @@
   els.settingsForm.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     data.settings.weeklyBudget = Number(els.weeklyBudget.value) || 0;
+    data.settings.cardLimit = els.cardLimit ? Number(els.cardLimit.value) || 0 : 0;
     data.settings.currency = els.currency.value;
     data.settings.weekStartsOn = Number(els.weekStart.value);
     data.settings.displayName = els.displayName.value.trim();

@@ -107,7 +107,7 @@
         <div id="category-bars" class="bars"></div>
         <div class="panel-head sub">
           <h2>Card vs cash</h2>
-          <span class="count" id="pay-count"></span>
+          <button type="button" class="pay-card-btn" id="pay-card-btn">Pay card</button>
         </div>
         <div id="pay-bars" class="bars"></div>
         <div class="panel-head sub">
@@ -125,6 +125,32 @@
       <div class="form-actions">
         <button value="cancel" class="ghost-btn">Keep it</button>
         <button value="ok" class="danger-btn">Remove</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="pay-card-dialog" class="modal">
+    <form id="pay-card-form" class="modal-card">
+      <h3>Pay card</h3>
+      <p class="hint" id="pay-card-hint">This lowers what you owe on the card and frees credit.</p>
+      <label class="field">
+        <span>Amount</span>
+        <div class="amount-row">
+          <span class="currency-mark" id="pay-card-currency">₱</span>
+          <input id="pay-card-amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required>
+        </div>
+      </label>
+      <label class="field">
+        <span>Day</span>
+        <input id="pay-card-date" type="date" required>
+      </label>
+      <label class="field">
+        <span>Note</span>
+        <input id="pay-card-note" type="text" placeholder="Optional — billed, GCash, bank">
+      </label>
+      <div class="form-actions">
+        <button type="button" class="ghost-btn" id="pay-card-cancel">Cancel</button>
+        <button type="submit" class="primary-btn">Pay now</button>
       </div>
     </form>
   </dialog>

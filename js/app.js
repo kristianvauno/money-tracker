@@ -31,6 +31,15 @@
     payChips: document.getElementById("pay-chips"),
     payBars: document.getElementById("pay-bars"),
     payCount: document.getElementById("pay-count"),
+    payCardBtn: document.getElementById("pay-card-btn"),
+    payCardDialog: document.getElementById("pay-card-dialog"),
+    payCardForm: document.getElementById("pay-card-form"),
+    payCardHint: document.getElementById("pay-card-hint"),
+    payCardAmount: document.getElementById("pay-card-amount"),
+    payCardDate: document.getElementById("pay-card-date"),
+    payCardNote: document.getElementById("pay-card-note"),
+    payCardCancel: document.getElementById("pay-card-cancel"),
+    payCardCurrency: document.getElementById("pay-card-currency"),
     form: document.getElementById("expense-form"),
     formTitle: document.getElementById("form-title"),
     formHint: document.getElementById("form-hint"),
@@ -160,6 +169,18 @@
     return exp && exp.payMethod === "card" ? "card" : "cash";
   }
 
+  function isCardPayment(exp) {
+    return !!(exp && exp.kind === "card-payment");
+  }
+
+  function isCardCharge(exp) {
+    return payMethodOf(exp) === "card" && !isCardPayment(exp);
+  }
+
+  function sumAmounts(list) {
+    return list.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  }
+
   function toast(msg) {
     els.toast.textContent = msg;
     els.toast.classList.remove("hidden");
@@ -286,7 +307,8 @@
     const thisMonday = startOfWeek(today, start);
     const days = weekDays(viewMonday);
     const items = weekExpenses(viewMonday);
-    const spent = items.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const purchases = items.filter((e) => !isCardPayment(e));
+    const spent = sumAmounts(purchases);
     const budget = Number(data.settings.weeklyBudget) || 0;
     const left = budget ? budget - spent : null;
     const dayIndex = Math.max(0, Math.min(6, Math.round((today - viewMonday) / 86400000)));
@@ -304,12 +326,14 @@
 
     const remainingClass = left == null ? "" : left < 0 ? "danger" : left / budget < 0.2 ? "warn" : "ok";
     const cardLimit = Number(data.settings.cardLimit) || 0;
-    const cashSpent = items.filter((e) => payMethodOf(e) === "cash").reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    const cardSpent = items.filter((e) => payMethodOf(e) === "card").reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const cashSpent = sumAmounts(purchases.filter((e) => payMethodOf(e) === "cash"));
+    const cardCharges = sumAmounts(purchases.filter((e) => isCardCharge(e)));
+    const cardPaid = sumAmounts(items.filter(isCardPayment));
+    const cardSpent = Math.max(0, cardCharges - cardPaid);
     const cardLeft = cardLimit ? cardLimit - cardSpent : null;
     const cardClass = cardLeft == null ? "" : cardLeft < 0 ? "danger" : cardLeft / cardLimit < 0.2 ? "warn" : "ok";
     els.kpis.innerHTML = [
-      kpi("Spent this week", money(spent), items.length + " expense" + (items.length === 1 ? "" : "s")),
+      kpi("Spent this week", money(spent), purchases.length + " expense" + (purchases.length === 1 ? "" : "s")),
       kpi("Budget left", left == null ? "Set a budget" : money(left), budget ? "of " + money(budget) : "Open Settings to add one", remainingClass),
       kpi("Card left", cardLeft == null ? "Set a card limit" : money(cardLeft), cardLimit ? "of " + money(cardLimit) + " credit" : "Open Settings to add one", cardClass),
       kpi("Daily average", money(avg), daysElapsed + " day" + (daysElapsed === 1 ? "" : "s") + " so far"),
@@ -317,29 +341,32 @@
     ].join("");
 
     const byCat = {};
-    items.forEach((e) => {
+    purchases.forEach((e) => {
       byCat[e.category] = (byCat[e.category] || 0) + Number(e.amount || 0);
     });
     const topCat = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
     const lastMonday = addDays(viewMonday, -7);
-    const lastSpent = weekExpenses(lastMonday).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const lastSpent = sumAmounts(weekExpenses(lastMonday).filter((e) => !isCardPayment(e)));
     const vsLast = lastSpent ? spent - lastSpent : null;
-    let story = items.length
-      ? money(spent) + " across " + items.length + " expense" + (items.length === 1 ? "" : "s") + "."
+    let story = purchases.length
+      ? money(spent) + " across " + purchases.length + " expense" + (purchases.length === 1 ? "" : "s") + "."
       : "No expenses logged this week yet. Add the first one on the left.";
     if (topCat && spent) {
       const cat = catById(topCat[0]);
       story += " " + cat.name + " is " + Math.round((topCat[1] / spent) * 100) + "% of the week.";
     }
-    if (items.length && spent) {
-      if (cardSpent && cashSpent) story += " " + money(cashSpent) + " cash, " + money(cardSpent) + " card.";
-      else if (cardSpent) story += " All paid by card.";
+    if (purchases.length && spent) {
+      if (cardCharges && cashSpent) story += " " + money(cashSpent) + " cash, " + money(cardCharges) + " card.";
+      else if (cardCharges) story += " All charged to card.";
       else story += " All paid in cash.";
     }
     if (left != null && items.length) {
       story += left >= 0 ? " " + money(left) + " left of this week’s budget." : " Over budget by " + money(Math.abs(left)) + ".";
     }
-    if (cardLimit && (cardSpent || items.length)) {
+    if (cardPaid) {
+      story += " Paid " + money(cardPaid) + " toward the card.";
+    }
+    if (cardLimit && (cardSpent || cardPaid || items.length)) {
       story += cardLeft >= 0
         ? " " + money(cardLeft) + " left on the card."
         : " Over the card limit by " + money(Math.abs(cardLeft)) + ".";
@@ -353,7 +380,7 @@
 
     els.days.innerHTML = days.map((d) => {
       const key = isoDate(d);
-      const daySum = items.filter((e) => e.date === key).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const daySum = purchases.filter((e) => e.date === key).reduce((sum, e) => sum + Number(e.amount || 0), 0);
       const active = filterDay === key;
       const isToday = sameDay(d, today);
       return `<button type="button" class="day${active ? " active" : ""}${isToday ? " today" : ""}" data-day="${key}">
@@ -367,7 +394,7 @@
       .filter((e) => !filterDay || e.date === filterDay)
       .filter((e) => {
         if (!query) return true;
-        const hay = (e.payee + " " + e.note + " " + catById(e.category).name + " " + payById(payMethodOf(e)).name).toLowerCase();
+        const hay = (e.payee + " " + e.note + " " + catById(e.category).name + " " + payById(payMethodOf(e)).name + (isCardPayment(e) ? " pay paid card payment" : "")).toLowerCase();
         return hay.includes(query);
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.createdAt || "").localeCompare(a.createdAt || "")));
@@ -381,20 +408,28 @@
       els.list.innerHTML = visible.map((e) => {
         const cat = catById(e.category);
         const pay = payById(payMethodOf(e));
+        const paid = isCardPayment(e);
         const day = parseISO(e.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
         const receipt = e.receipt && e.receipt.url
           ? `<a class="link-btn" href="${e.receipt.url}" target="_blank" rel="noopener">Receipt</a>`
           : "";
+        const rowPay = isCardCharge(e)
+          ? `<button type="button" class="link-btn" data-pay-amount="${e.amount}">Pay</button>`
+          : "";
+        const tag = paid
+          ? `<span class="pay-tag paid">Paid</span>`
+          : `<span class="pay-tag">${pay.emoji} ${escapeHtml(pay.name)}</span>`;
         return `<article class="row" data-id="${e.id}">
           <div class="when">${day}</div>
           <div>
-            <div class="who">${escapeHtml(e.payee || cat.name)} <span class="pay-tag">${pay.emoji} ${escapeHtml(pay.name)}</span></div>
-            <div class="meta">${cat.emoji} ${escapeHtml(cat.name)}${e.note ? " · " + escapeHtml(e.note) : ""}</div>
+            <div class="who">${escapeHtml(paid ? (e.payee || "Card payment") : (e.payee || cat.name))} ${tag}</div>
+            <div class="meta">${paid ? "Payment toward card" : cat.emoji + " " + escapeHtml(cat.name)}${e.note ? " · " + escapeHtml(e.note) : ""}</div>
           </div>
           <div>
-            <div class="amt">${money(e.amount)}</div>
+            <div class="amt${paid ? " paid" : ""}">${paid ? "−" : ""}${money(e.amount)}</div>
             <div class="row-actions">
               ${receipt}
+              ${rowPay}
               <button type="button" class="link-btn" data-edit="${e.id}">Edit</button>
               <button type="button" class="link-btn" data-del="${e.id}">Remove</button>
             </div>
@@ -416,36 +451,30 @@
         </div>`).join("")
       : `<p class="empty">Category bars show up after the first expense.</p>`;
 
-    const payRows = PAY_METHODS.map((p) => ({
-      ...p,
-      total: items.filter((e) => payMethodOf(e) === p.id).reduce((sum, e) => sum + Number(e.amount || 0), 0),
-    })).filter((p) => p.total > 0 || (p.id === "card" && cardLimit));
+    const payRows = [
+      { id: "cash", name: "Cash", emoji: "💵", total: cashSpent },
+      { id: "card", name: "Card", emoji: "💳", total: cardSpent },
+    ].filter((p) => p.total > 0 || p.id === "card");
     const payMax = Math.max(1, ...payRows.map((p) => p.total), cardLimit, 0);
-    if (els.payCount) {
-      els.payCount.textContent = cardLimit
-        ? (cardLeft >= 0 ? money(cardLeft) + " card left" : "Over card limit")
-        : (payRows.some((p) => p.total) ? payRows.filter((p) => p.total).map((p) => p.name).join(" · ") : "No spend yet");
-    }
     if (els.payBars) {
-      els.payBars.innerHTML = payRows.length
-        ? payRows.map((p) => {
-            const cap = p.id === "card" && cardLimit ? cardLimit : payMax;
-            const pct = Math.min(100, Math.round((p.total / Math.max(1, cap)) * 100));
-            const label = p.id === "card" && cardLimit
-              ? money(p.total) + " / " + money(cardLimit)
-              : money(p.total);
-            return `<div class="bar-row">
-              <div class="bar-top"><strong>${p.emoji} ${escapeHtml(p.name)}</strong><span>${label}</span></div>
-              <div class="track"><i class="${p.id === "card" && cardLimit && p.total > cardLimit ? "over" : ""}" style="width:${pct}%"></i></div>
-            </div>`;
-          }).join("")
-        : `<p class="empty">Cash and card totals show up after you log an expense.</p>`;
+      els.payBars.innerHTML = payRows.map((p) => {
+        const cap = p.id === "card" && cardLimit ? cardLimit : payMax;
+        const pct = Math.min(100, Math.round((p.total / Math.max(1, cap)) * 100));
+        const label = p.id === "card" && cardLimit
+          ? money(p.total) + " / " + money(cardLimit)
+          : (p.total ? money(p.total) : "—");
+        const extra = p.id === "card" && cardPaid ? ` · paid ${money(cardPaid)}` : "";
+        return `<div class="bar-row">
+          <div class="bar-top"><strong>${p.emoji} ${escapeHtml(p.name)}</strong><span class="pay-amt">${label}${extra}</span></div>
+          <div class="track"><i class="${p.id === "card" && cardLimit && p.total > cardLimit ? "over" : ""}" style="width:${pct}%"></i></div>
+        </div>`;
+      }).join("");
     }
 
     const hist = [];
     for (let i = 0; i < 8; i++) {
       const m = addDays(startOfWeek(today, start), -7 * i);
-      const total = weekExpenses(m).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const total = sumAmounts(weekExpenses(m).filter((e) => !isCardPayment(e)));
       hist.push({ monday: m, total, label: i === 0 ? "This week" : i === 1 ? "Last week" : m.toLocaleDateString(undefined, { month: "short", day: "numeric" }) });
     }
     const histMax = Math.max(1, ...hist.map((h) => h.total));
@@ -504,6 +533,24 @@
     els.amount.focus();
   }
 
+  function openPayCard(presetAmount) {
+    if (!els.payCardDialog) return;
+    const weekItems = weekExpenses(viewMonday);
+    const due = Math.max(0, sumAmounts(weekItems.filter(isCardCharge)) - sumAmounts(weekItems.filter(isCardPayment)));
+    const suggested = Number(presetAmount) > 0 ? Number(presetAmount) : due;
+    if (els.payCardCurrency) els.payCardCurrency.textContent = SYMBOL[data.settings.currency] || data.settings.currency;
+    els.payCardAmount.value = suggested ? String(suggested) : "";
+    els.payCardDate.value = selectedDay || isoDate(new Date());
+    els.payCardNote.value = "";
+    if (els.payCardHint) {
+      els.payCardHint.textContent = due
+        ? "On the card this week: " + money(due) + ". Paying frees that credit."
+        : "No card charges this week. You can still log a payment.";
+    }
+    els.payCardDialog.showModal();
+    els.payCardAmount.focus();
+  }
+
   function confirmRemove() {
     return new Promise((resolve) => {
       const dialog = els.confirmDialog;
@@ -555,6 +602,43 @@
 
   els.cancelEdit.addEventListener("click", resetForm);
 
+  if (els.payCardBtn) {
+    els.payCardBtn.addEventListener("click", () => openPayCard());
+  }
+  if (els.payCardCancel) {
+    els.payCardCancel.addEventListener("click", () => els.payCardDialog.close());
+  }
+  if (els.payCardForm) {
+    els.payCardForm.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const amount = Number(els.payCardAmount.value);
+      if (!(amount > 0)) {
+        toast("Enter an amount greater than 0.");
+        els.payCardAmount.focus();
+        return;
+      }
+      const date = els.payCardDate.value || isoDate(new Date());
+      data.expenses.push({
+        id: uid(),
+        amount,
+        currency: data.settings.currency,
+        date,
+        category: "bills",
+        payMethod: "cash",
+        kind: "card-payment",
+        payee: "Card payment",
+        note: (els.payCardNote.value || "").trim(),
+        receipt: null,
+        createdAt: new Date().toISOString(),
+      });
+      viewMonday = startOfWeek(parseISO(date), Number(data.settings.weekStartsOn) || 0);
+      await save();
+      els.payCardDialog.close();
+      toast("Card payment saved. Credit freed.");
+      render();
+    });
+  }
+
   els.form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const amount = Number(els.amount.value);
@@ -588,16 +672,16 @@
     const idx = data.expenses.findIndex((e) => e.id === payload.id);
     if (idx >= 0) {
       payload.createdAt = data.expenses[idx].createdAt || payload.createdAt;
+      if (data.expenses[idx].kind) payload.kind = data.expenses[idx].kind;
       data.expenses[idx] = payload;
     } else {
       data.expenses.push(payload);
     }
     viewMonday = startOfWeek(parseISO(date), Number(data.settings.weekStartsOn) || 0);
-    const cardUsed = weekExpenses(viewMonday)
-      .filter((e) => payMethodOf(e) === "card")
-      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const weekItems = weekExpenses(viewMonday);
+    const cardUsed = Math.max(0, sumAmounts(weekItems.filter(isCardCharge)) - sumAmounts(weekItems.filter(isCardPayment)));
     const limit = Number(data.settings.cardLimit) || 0;
-    if (payload.payMethod === "card" && limit && cardUsed > limit) {
+    if (isCardCharge(payload) && limit && cardUsed > limit) {
       toast("Saved. Over the card limit by " + money(cardUsed - limit) + ".");
     } else if (idx >= 0) {
       toast("Expense updated.");
@@ -613,8 +697,13 @@
   });
 
   els.list.addEventListener("click", async (ev) => {
+    const payBtn = ev.target.closest("[data-pay-amount]");
     const edit = ev.target.closest("[data-edit]");
     const del = ev.target.closest("[data-del]");
+    if (payBtn) {
+      openPayCard(payBtn.dataset.payAmount);
+      return;
+    }
     if (edit) {
       const exp = data.expenses.find((e) => e.id === edit.dataset.edit);
       if (exp) fillForm(exp);

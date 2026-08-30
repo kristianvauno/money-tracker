@@ -173,6 +173,24 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   color: var(--gold-2);
   vertical-align: middle;
 }
+.pay-tag.paid {
+  color: var(--ok);
+  border-color: rgba(52, 211, 153, 0.35);
+}
+.amt.paid { color: var(--ok); }
+.pay-card-btn {
+  border-radius: 999px;
+  padding: 0.32rem 0.8rem;
+  font-weight: 700;
+  font-size: 0.78rem;
+  border: 0;
+  background: var(--gold);
+  color: #1a1204;
+  white-space: nowrap;
+}
+.bar-top { align-items: center; gap: 0.4rem; }
+.bar-top .pay-card-btn { margin-left: auto; }
+.bar-top .pay-amt { color: var(--muted); font-size: 0.8rem; }
 .form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .primary-btn, .ghost-btn, .danger-btn, .link-btn {
   border-radius: 999px;
